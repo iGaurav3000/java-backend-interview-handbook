@@ -139,22 +139,33 @@ Then write the dedup record and the business change **in the same database trans
 ```java
 @Transactional
 public void handle(OrderEvent event) {
-    try {
-        processedEvents.insert(event.eventId());   // UNIQUE constraint on event_id
-    } catch (DuplicateKeyException e) {
-        return;                                    // already handled, drop it
+    int inserted = jdbc.update("""
+            INSERT INTO processed_events (event_id)
+            VALUES (?)
+            ON CONFLICT (event_id) DO NOTHING
+            """, event.eventId());
+
+    if (inserted == 0) {
+        return;                    // already handled, drop it
     }
+
     orders.applyPayment(event.orderId(), event.amount());
 }
 ```
 
-The unique constraint is doing the real work. Two consumers racing on the same event: one insert wins, the other gets a constraint violation and exits. Both commit a consistent result.
+The primary key on `processed_events` is doing the real work. Two consumers racing on the same event: one insert lands, the other conflicts and backs out. Both commit a consistent result.
 
 What makes this correct is that the marker and the effect share one transaction. If you check a Redis set first and *then* write to the database, you have a window between the two where a crash leaves the event marked as done but not actually done — a silent data loss bug that will take you a week to find.
 
+**Why `ON CONFLICT` and not a try/catch.** The obvious version of this code catches `DuplicateKeyException` and returns. On PostgreSQL that is broken, and in a way that passes code review. A constraint violation aborts the entire surrounding transaction, so once the exception fires there is nothing left to commit — the transaction is already dead, and the commit at the end of `@Transactional` fails with `current transaction is aborted, commands ignored until end of transaction block`. Catching the exception hides the first error and hands you a second one further away from the cause.
+
+The conflict clause never raises, so the transaction stays alive and you get an affected-row count to branch on instead. On MySQL the equivalent is `INSERT IGNORE`, or `INSERT ... ON DUPLICATE KEY UPDATE`.
+
+Knowing this distinction is a strong signal in an interview, because it only comes from having shipped the broken version once.
+
 Housekeeping: that table grows forever, so partition it by day or run a scheduled delete beyond your maximum redelivery window.
 
----
+> **Runnable version:** [idempotent-kafka-consumer](https://github.com/iGaurav3000/idempotent-kafka-consumer) — Spring Boot, real Kafka and PostgreSQL via Testcontainers, with a test that publishes the same event three times and proves the balance moves once.
 
 ## Follow-ups the interviewer has ready
 
