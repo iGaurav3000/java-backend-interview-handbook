@@ -20,6 +20,7 @@ This handbook covers that layer.
 
 ### Distributed systems
 - [Kafka delivery semantics and idempotency](distributed-systems/kafka-delivery-semantics.md) — what at-least-once actually costs you, where the offset commit belongs, and why exactly-once stops at the Kafka boundary
+- - [idempotent-kafka-consumer](https://github.com/iGaurav3000/idempotent-kafka-consumer) — runnable companion: Spring Boot, real Kafka and PostgreSQL via Testcontainers
 
 ### Java internals
 *In progress.* Collections under concurrency, the memory model, garbage collection, virtual threads and what they do to `synchronized`.
